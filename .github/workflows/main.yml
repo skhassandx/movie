@@ -43,6 +43,14 @@ jobs:
           YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
         run: python main.py
 
+      - name: Upload Generated Files (Images & Audio)
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: generated-media-files
+          path: output/
+          retention-days: 7
+
       - name: Commit updated used-stories tracker
         if: always()
         run: |
