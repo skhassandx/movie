@@ -31,7 +31,7 @@ STYLE_SUFFIX = (
 )
 
 MODEL = "@cf/black-forest-labs/flux-1-schnell"
-MAX_RETRIES = 3
+MAX_RETRIES = 6
 
 
 def cloudflare_generate_image(prompt, account_id, api_token):
@@ -42,17 +42,35 @@ def cloudflare_generate_image(prompt, account_id, api_token):
     for attempt in range(1, MAX_RETRIES + 1):
         try:
             resp = requests.post(url, headers=headers, json=payload, timeout=60)
+
+            # 429 = Cloudflare's shared free GPU capacity is temporarily busy.
+            # This is common for free-tier image models and usually clears
+            # within a minute or two - so wait it out instead of failing fast.
+            if resp.status_code == 429:
+                retry_after = resp.headers.get("Retry-After")
+                wait = float(retry_after) if retry_after else min(15 * (2 ** (attempt - 1)), 120)
+                print(
+                    f"[image_generator] 429 (Cloudflare GPU ব্যস্ত) - {wait:.0f} সেকেন্ড "
+                    f"অপেক্ষা করে আবার চেষ্টা করা হচ্ছে ({attempt}/{MAX_RETRIES})..."
+                )
+                time.sleep(wait)
+                continue
+
             resp.raise_for_status()
             result = resp.json()
             if not result.get("success"):
                 raise RuntimeError(result.get("errors"))
             b64_image = result["result"]["image"]
             return base64.b64decode(b64_image)
+        except requests.exceptions.HTTPError:
+            raise  # non-429 HTTP errors (401/403/etc.) are real problems, don't hide them
         except Exception as e:
             print(f"[image_generator] চেষ্টা {attempt}/{MAX_RETRIES} ব্যর্থ: {e}")
             if attempt == MAX_RETRIES:
                 raise
-            time.sleep(3 * attempt)
+            time.sleep(5 * attempt)
+
+    raise RuntimeError("সবগুলো রিট্রাই শেষ হয়ে গেছে, ছবি তৈরি করা যায়নি।")
 
 
 def crop_to_landscape(image_bytes, target_size=TARGET_SIZE):
