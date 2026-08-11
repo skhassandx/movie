@@ -1,8 +1,8 @@
 """
 image_generator.py
 -------------------
-Calls Cloudflare Workers AI to turn each scene's image_prompt into a picture, 
-then crops/resizes it to a 1280x720 landscape frame for the video.
+Calls Cloudflare Workers AI to turn each scene's image_prompt into a picture.
+Includes a Safe Prompt fallback if the original prompt triggers a Content Filter (400 Bad Request).
 """
 
 import os
@@ -24,7 +24,10 @@ STYLE_SUFFIX = (
     "dramatic composition, dark suspense mystery tone, no text, no watermark"
 )
 
-# একাধিক মডেলের তালিকা (প্রথমটি ব্যস্ত থাকলে পরেরগুলো ব্যবহার করবে)
+# যদি মূল প্রম্পট ব্লক হয়, তখন এই নিরাপদ (Safe) প্রম্পটটি দিয়ে ছবি বানানো হবে
+SAFE_PROMPT = "A dark mysterious empty cinematic room, shadows, scary suspenseful atmosphere, faint light" + STYLE_SUFFIX
+
+# একাধিক মডেলের তালিকা (প্রথমটি ব্যর্থ হলে পরেরগুলোতে চেষ্টা করবে)
 MODELS = [
     "@cf/black-forest-labs/flux-1-schnell",
     "@cf/bytedance/stable-diffusion-xl-lightning",
@@ -34,7 +37,7 @@ MAX_RETRIES = 5
 
 def cloudflare_generate_image(prompt, account_id, api_token):
     headers = {"Authorization": f"Bearer {api_token}"}
-    payload = {"prompt": prompt[:2000]} # steps প্যারামিটার সরানো হয়েছে যাতে সব মডেল ডিফল্টভাবে কাজ করতে পারে
+    payload = {"prompt": prompt[:2000]}
 
     for model in MODELS:
         url = f"https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run/{model}"
@@ -43,7 +46,7 @@ def cloudflare_generate_image(prompt, account_id, api_token):
             try:
                 resp = requests.post(url, headers=headers, json=payload, timeout=60)
 
-                # 429 = Cloudflare's shared free GPU capacity is temporarily busy.
+                # 429 (GPU ব্যস্ত) - সাময়িক সার্ভার লোড
                 if resp.status_code == 429:
                     wait = 20 * attempt
                     print(f"[image_generator] 429 (GPU ব্যস্ত) - '{model}' এর জন্য {wait} সেকেন্ড অপেক্ষা করা হচ্ছে ({attempt}/{MAX_RETRIES})...")
@@ -60,18 +63,18 @@ def cloudflare_generate_image(prompt, account_id, api_token):
                 return base64.b64decode(b64_image)
                 
             except requests.exceptions.HTTPError as e:
-                # 400 Bad Request বা অন্য এরর হলে পরের মডেলে ট্রাই করবে
+                # 400 Bad Request (Content Filter) বা অন্য এরর হলে পরের মডেলে ট্রাই করবে
                 print(f"[image_generator] HTTP Error মডেলে '{model}': {e}")
                 break 
             except Exception as e:
                 print(f"[image_generator] '{model}' চেষ্টা {attempt}/{MAX_RETRIES} ব্যর্থ: {e}")
                 if attempt == MAX_RETRIES:
                     print(f"[image_generator] '{model}' পুরোপুরি ব্যর্থ, বিকল্প মডেল খোঁজা হচ্ছে...")
-                    break # এই মডেলের রিট্রাই শেষ, লুপ ব্রেক করে পরের মডেলে যাবে
+                    break
                 time.sleep(5 * attempt)
 
-    # যদি তালিকার কোনো মডেলই কাজ না করে
-    raise RuntimeError("সবগুলো মডেল এবং রিট্রাই শেষ হয়ে গেছে, ছবি তৈরি করা যায়নি।")
+    # যদি কোনো মডেলই কাজ না করে
+    raise RuntimeError("সবগুলো মডেল এবং রিট্রাই শেষ হয়ে গেছে, এই প্রম্পট দিয়ে ছবি তৈরি করা যায়নি।")
 
 
 def crop_to_landscape(image_bytes, target_size=TARGET_SIZE):
@@ -114,11 +117,19 @@ def generate_all():
 
         print(f"[image_generator] ছবি তৈরি হচ্ছে {i}/{total}...")
         prompt = scene["image_prompt"] + STYLE_SUFFIX
-        img_bytes = cloudflare_generate_image(prompt, account_id, api_token)
+        
+        try:
+            # প্রথমে মূল ভৌতিক প্রম্পট দিয়ে চেষ্টা করা হবে
+            img_bytes = cloudflare_generate_image(prompt, account_id, api_token)
+        except RuntimeError as e:
+            # যদি কন্টেন্ট ফিল্টার ব্লক করে দেয়, তখন সেফ প্রম্পট (SAFE_PROMPT) দিয়ে আবার চেষ্টা করবে
+            print(f"[image_generator] ⚠️ সতর্কতা: প্রম্পট ব্লক হয়েছে বা ব্যর্থ হয়েছে! সেফ প্রম্পট ব্যবহার করা হচ্ছে...")
+            img_bytes = cloudflare_generate_image(SAFE_PROMPT, account_id, api_token)
+            
         img = crop_to_landscape(img_bytes)
         img.save(out_path, "JPEG", quality=90)
 
-        # মূল সমাধান: পরপর রিকোয়েস্ট ঠেকাতে এবং রেট লিমিট বাঁচাতে ১৫ সেকেন্ডের গ্যাপ
+        # API লিমিট বাঁচাতে এবং 429 এরর ঠেকাতে ১৫ সেকেন্ডের গ্যাপ
         time.sleep(15)
 
     print(f"[image_generator] সম্পন্ন - {total}টা ছবি তৈরি হয়েছে।")
