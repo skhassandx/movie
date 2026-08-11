@@ -19,6 +19,9 @@ from moviepy.editor import (
     CompositeVideoClip,
     concatenate_videoclips,
 )
+import PIL.Image
+if not hasattr(PIL.Image, 'ANTIALIAS'):
+    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 OUTPUT_DIR = "output"
 SCRIPT_DATA_PATH = os.path.join(OUTPUT_DIR, "script_data.json")
