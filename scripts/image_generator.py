@@ -30,7 +30,7 @@ STYLE_SUFFIX = (
     "dramatic composition, dark suspense mystery tone, no text, no watermark"
 )
 
-BASE_URL = "https://gen.pollinations.ai/image/"
+BASE_URL = "https://image.pollinations.ai/prompt/"  # legacy endpoint - genuinely key-less/free
 MODEL = "flux"
 MAX_RETRIES = 4
 
@@ -38,11 +38,12 @@ MAX_RETRIES = 4
 def pollinations_generate_image(prompt):
     encoded_prompt = quote(prompt[:2000])
     url = f"{BASE_URL}{encoded_prompt}"
-    # No `key` param on purpose: sending the sk_ key routes the request
-    # through Pollinations' billed/Pollen-metered path (402 Insufficient
-    # balance) even at default settings. Fully anonymous requests hit the
-    # genuinely free-unlimited Flux tier - just soft rate-limited to ~1/15s.
-    params = {"model": MODEL}
+    params = {
+        "model": MODEL,
+        "width": TARGET_SIZE[0],
+        "height": TARGET_SIZE[1],
+        "nologo": "true",
+    }
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
