@@ -38,12 +38,11 @@ MAX_RETRIES = 4
 def pollinations_generate_image(prompt, api_key=None):
     encoded_prompt = quote(prompt[:2000])
     url = f"{BASE_URL}{encoded_prompt}"
-    params = {
-        "model": MODEL,
-        "width": TARGET_SIZE[0],
-        "height": TARGET_SIZE[1],
-        "nologo": "true",
-    }
+    # Deliberately NOT passing width/height/nologo - those pushed the request
+    # into Pollinations' paid/Pollen-metered path (402 Payment Required).
+    # Default-size Flux is the truly free+unlimited tier; we crop/resize to
+    # 1280x720 ourselves locally afterwards (see crop_to_landscape below).
+    params = {"model": MODEL}
     if api_key:
         params["key"] = api_key
 
@@ -66,6 +65,12 @@ def pollinations_generate_image(prompt, api_key=None):
             if len(content) < 500:  # sanity check - a real image is never this small
                 raise ValueError(f"খুব ছোট রেসপন্স পাওয়া গেছে, ইমেজ মনে হচ্ছে না: {content[:200]}")
             return content
+        except requests.exceptions.HTTPError as e:
+            print(f"[image_generator] HTTP এরর ডিটেইল: {resp.text[:300]}")
+            print(f"[image_generator] চেষ্টা {attempt}/{MAX_RETRIES} ব্যর্থ: {e}")
+            if attempt == MAX_RETRIES:
+                raise
+            time.sleep(5 * attempt)
         except Exception as e:
             print(f"[image_generator] চেষ্টা {attempt}/{MAX_RETRIES} ব্যর্থ: {e}")
             if attempt == MAX_RETRIES:
