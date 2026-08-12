@@ -25,7 +25,8 @@ def save_used_story(title):
     with open(USED_STORIES_PATH, "w", encoding="utf-8") as f:
         json.dump(used, f, ensure_ascii=False, indent=4)
 
-def generate_script():
+# 👉 এখানে নাম ঠিক করে 'generate' করা হলো, যাতে main.py এরর না দেয়
+def generate():
     print("🎬 Generating Cinematic Movie Explainer / Thriller Story...")
     
     api_key = os.environ.get("GEMINI_API_KEY")
@@ -131,4 +132,5 @@ def generate_script():
     return False
 
 if __name__ == "__main__":
-    generate_script()
+    # 👉 এখানেও নাম আপডেট করা হয়েছে
+    generate()
