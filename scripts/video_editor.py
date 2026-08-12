@@ -19,9 +19,6 @@ from moviepy.editor import (
     CompositeVideoClip,
     concatenate_videoclips,
 )
-import PIL.Image
-if not hasattr(PIL.Image, 'ANTIALIAS'):
-    PIL.Image.ANTIALIAS = PIL.Image.LANCZOS
 
 OUTPUT_DIR = "output"
 SCRIPT_DATA_PATH = os.path.join(OUTPUT_DIR, "script_data.json")
@@ -150,7 +147,7 @@ def build_video():
         codec="libx264",
         audio_codec="aac",
         threads=4,
-        preset="medium",
+        preset="faster",  # "medium" was too slow on GitHub Actions' CPU-only runners
     )
     print(f"[video_editor] সম্পন্ন - {FINAL_VIDEO_PATH}")
     return FINAL_VIDEO_PATH
