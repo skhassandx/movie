@@ -1,188 +1,134 @@
-"""
-script_generator.py
---------------------
-Uses Gemini to pick a public-domain story (Western classic OR Bengali
-folklore) and turn it into a Bengali "mystery/suspense explainer" script,
-broken into narration scenes with an image prompt for each scene.
-
-Output contract (plain delimited text from Gemini, parsed with regex -
-kept deliberately simple/robust instead of asking Gemini for JSON, since
-JSON responses from LLMs break parsing more often than a simple template):
-
-TITLE: <bengali title>
-DESCRIPTION: <youtube description>
-TAGS: tag1, tag2, tag3
----SCENE---
-NARRATION: <bengali narration line for this scene>
-IMAGE_PROMPT: <english prompt describing the visual for this scene>
----END---
-(...repeated for every scene...)
-
-Final result is saved to output/script_data.json for the next stages.
-"""
-
 import os
-import re
 import json
+import random
 import time
 from google import genai
+from google.genai import types
 
-# Tries models newest-first; falls back to the next one if a model is busy
-# (503) or otherwise fails, so a single overloaded model doesn't kill the run.
-MODEL_CANDIDATES = [
-    "gemini-3.6-flash",       # newest, GA
-    "gemini-3.5-flash-lite",  # newest lite tier
-    "gemini-3.1-flash-lite",  # previous gen, stable
-    "gemini-2.5-flash",       # older but proven - final safety net
-]
-OUTPUT_DIR = "output"
+# 🌟 ডাইনামিক পাথ (নতুন প্রজেক্ট স্ট্রাকচার অনুযায়ী)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+OUTPUT_DIR = os.path.join(BASE_DIR, "output")
+DATA_DIR = os.path.join(BASE_DIR, "data")
 SCRIPT_DATA_PATH = os.path.join(OUTPUT_DIR, "script_data.json")
-USED_STORIES_PATH = os.path.join("data", "used_stories.json")
-
-# Target video length in minutes (medium length, as decided).
-TARGET_MINUTES = (10, 15)
-# Bengali narration speech rate assumption for edge-tts (approx words/min).
-WPM = 155
-
+USED_STORIES_PATH = os.path.join(DATA_DIR, "used_stories.json")
 
 def load_used_stories():
-    if not os.path.exists(USED_STORIES_PATH):
-        return []
-    with open(USED_STORIES_PATH, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    return data.get("used_titles", [])
+    if os.path.exists(USED_STORIES_PATH):
+        with open(USED_STORIES_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    return []
 
-
-def save_used_stories(titles):
-    os.makedirs(os.path.dirname(USED_STORIES_PATH), exist_ok=True)
+def save_used_story(title):
+    used = load_used_stories()
+    used.append(title)
+    os.makedirs(DATA_DIR, exist_ok=True)
     with open(USED_STORIES_PATH, "w", encoding="utf-8") as f:
-        json.dump({"used_titles": titles}, f, ensure_ascii=False, indent=2)
+        json.dump(used, f, ensure_ascii=False, indent=4)
 
-
-def build_prompt(used_titles):
-    min_words = TARGET_MINUTES[0] * WPM
-    max_words = TARGET_MINUTES[1] * WPM
-    avoid_block = ", ".join(used_titles) if used_titles else "(কোনোটা নেই - এটাই প্রথম ভিডিও)"
-
-    return f"""তুমি একজন অভিজ্ঞ বাংলা ইউটিউব "Mystery/Suspense Explainer" চ্যানেলের স্ক্রিপ্ট রাইটার।
-
-কাজ: নিচের দুই ধরনের যেকোনো একটি পাবলিক ডোমেইন (কপিরাইট-মুক্ত, ১০০+ বছরের পুরনো) গল্প বেছে নাও,
-যেটা এখনো ব্যবহার হয়নি:
-1. পশ্চিমা ক্লাসিক রহস্য/থ্রিলার সাহিত্য (যেমন: শার্লক হোমস গল্পগুলো, এডগার অ্যালান পো,
-   ড্রাকুলা, ফ্র্যাঙ্কেনস্টাইন, দ্য টেল-টেল হার্ট, দ্য কাস্ক অফ অ্যামন্টিলাডো ইত্যাদি)
-2. বাংলা রূপকথা/লোককথা, কিন্তু সাসপেন্স/রহস্য আঙ্গিকে নতুন করে বলা (ঠাকুরমার ঝুলি ধাঁচের
-   পুরনো, কপিরাইট-মুক্ত গল্প)
-
-ইতিমধ্যে ব্যবহৃত গল্পগুলো (এগুলো আবার বেছো না): {avoid_block}
-
-এখন সেই গল্পটাকে বাংলা ভাষায় একটা ড্রামাটিক, হুক-ভিত্তিক "explainer" স্টাইলে ন্যারেশন স্ক্রিপ্টে
-রূপান্তর করো। ভিডিওটা {TARGET_MINUTES[0]}-{TARGET_MINUTES[1]} মিনিটের হবে, তাই মোট ন্যারেশন
-প্রায় {min_words}-{max_words} শব্দ হতে হবে (বাংলা TTS পড়ার গতি অনুযায়ী হিসাব করা)।
-
-স্ক্রিপ্টকে ছোট ছোট "scene" এ ভাগ করো (প্রতিটা scene প্রায় ২০-৩০ শব্দের ন্যারেশন, প্রায় ৭-১০
-সেকেন্ডের বলার সময়)। মোট scene সংখ্যা আনুমানিক ৬৫-৮৫টা হবে। প্রতিটা scene এর জন্য একটা
-ডিটেইলড ইংরেজি ইমেজ প্রম্পট দাও যা AI ইমেজ জেনারেটরের জন্য উপযুক্ত - সিনেম্যাটিক, ড্রামাটিক
-লাইটিং, একই ভিজ্যুয়াল স্টাইল ধরে রাখতে হবে পুরো ভিডিও জুড়ে।
-
-নিয়ম:
-- শুধু গল্পের বর্ণনা/সারমর্ম বলবে, কোনো আসল সিনেমা/মুভির নাম বা চরিত্র উল্লেখ করবে না।
-- প্রথম ২-৩টা scene অবশ্যই একটা শক্তিশালী হুক দিয়ে শুরু করবে (দর্শক যাতে স্ক্রল না করে)।
-- শেষে একটা সংক্ষিপ্ত টুইস্ট/উপসংহার/নৈতিক শিক্ষা রাখবে।
-- আউটপুট অবশ্যই নিচের ফরম্যাট হুবহু মেনে চলবে, অন্য কোনো টেক্সট, মার্কডাউন, বা ব্যাখ্যা দিবে না।
-
-ফরম্যাট:
-TITLE: <আকর্ষণীয় বাংলা টাইটেল, ৬০ ক্যারেক্টারের কম>
-DESCRIPTION: <২-৩ লাইনের ইউটিউব বিবরণ, বাংলায়>
-TAGS: <৮-১২টা কমা দিয়ে আলাদা করা রিলেভেন্ট ট্যাগ>
----SCENE---
-NARRATION: <বাংলা ন্যারেশন লাইন>
-IMAGE_PROMPT: <English image prompt>
----END---
----SCENE---
-NARRATION: <বাংলা ন্যারেশন লাইন>
-IMAGE_PROMPT: <English image prompt>
----END---
-(...সব scene এর জন্য একই প্যাটার্নে চালিয়ে যাও...)
-"""
-
-
-SCENE_RE = re.compile(
-    r"---SCENE---\s*NARRATION:\s*(.*?)\s*IMAGE_PROMPT:\s*(.*?)\s*---END---",
-    re.DOTALL,
-)
-
-
-def parse_response(text):
-    title_m = re.search(r"TITLE:\s*(.+)", text)
-    desc_m = re.search(r"DESCRIPTION:\s*(.+)", text)
-    tags_m = re.search(r"TAGS:\s*(.+)", text)
-
-    if not title_m:
-        raise ValueError("Gemini আউটপুটে TITLE পাওয়া যায়নি - প্রম্পট/মডেল রেসপন্স চেক করো।")
-
-    title = title_m.group(1).strip()
-    description = desc_m.group(1).strip() if desc_m else title
-    tags = [t.strip() for t in tags_m.group(1).split(",")] if tags_m else []
-
-    scenes = []
-    for m in SCENE_RE.finditer(text):
-        narration = m.group(1).strip()
-        image_prompt = m.group(2).strip()
-        if narration and image_prompt:
-            scenes.append({"narration": narration, "image_prompt": image_prompt})
-
-    if len(scenes) < 20:
-        raise ValueError(
-            f"মাত্র {len(scenes)}টা scene পার্স হয়েছে - খুব কম। Gemini আউটপুট ফরম্যাট ঠিকমতো "
-            "অনুসরণ করেনি, আবার চেষ্টা করো।"
-        )
-
-    return {"title": title, "description": description, "tags": tags, "scenes": scenes}
-
-
-def generate():
+def generate_script():
+    print("🎬 Generating Cinematic Movie Explainer / Thriller Story...")
+    
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        raise EnvironmentError("GEMINI_API_KEY সেট করা নেই (GitHub Secrets এ যোগ করো)।")
+        print("❌ CRITICAL ERROR: GEMINI_API_KEY not found!")
+        return False
 
     client = genai.Client(api_key=api_key)
-    used_titles = load_used_stories()
-    prompt = build_prompt(used_titles)
 
-    response = None
-    last_error = None
-    for model_name in MODEL_CANDIDATES:
-        for attempt in range(1, 3):
+    # 🌟 মুভি এক্সপ্লেইনার / থ্রিলার ক্যাটাগরি লিস্ট
+    genres = [
+        "সাইকোলজিক্যাল থ্রিলার ও রহস্যময় ঘটনা (Psychological Thriller)",
+        "শার্লক হোমসের মত ডিটেকটিভ রহস্য (Detective Mystery)",
+        "স্পেস স্টেশন ও মহাকাশের সার্ভাইভাল থ্রিলার (Space Survival)",
+        "ডার্ক ফ্যান্টাসি ও জাদুকরী সাম্রাজ্য (Dark Fantasy)",
+        "টাইম লুপ ও রহস্যময় সময় ভ্রমণ (Time Loop Mystery)",
+        "নিঝুম দ্বীপের সারভাইভাল অ্যাডভেঞ্চার (Island Survival)",
+        "প্যারানরমাল ও ভুতুড়ে রহস্যজনক ঘটনা (Paranormal Mystery)",
+        "গভীর সমুদ্রের রহস্য ও হারিয়ে যাওয়া জাহাজ (Deep Sea Mystery)",
+        "প্রাচীন পিরামিড ও অভিশপ্ত ধনসম্পদ (Ancient Curse)"
+    ]
+    
+    selected_genre = random.choice(genres)
+    scene_count = random.randint(8, 15) 
+
+    # 🌟 মুভি এক্সপ্লেইনার টোনের অ্যাডভান্সড মাস্টার প্রম্পট
+    prompt = f"""
+    You are a professional YouTube Movie Explainer & Cinematic Storyteller. Write an intense, suspenseful, and engaging story recap in Bengali.
+
+    Target Genre/Topic: {selected_genre}
+    The script must be divided into exactly {scene_count} scenes.
+
+    🔥 CRITICAL RULE FOR SCENE 1 (THE MOVIE HOOK):
+    - Scene 1 MUST start like a dramatic movie recap to hook the audience instantly.
+    - "narration" for Scene 1: Must create instant suspense in Bengali (e.g., 'গল্পের শুরুতে আমরা দেখতে পাই এক নিঝুম রাত...').
+
+    For EVERY scene's "image_prompt", combine these elements into a single English string:
+    - [Style]: Photorealistic movie still, 8k resolution, unreal engine 5 render.
+    - [Subject & Motion]: Describe the character's exact action and emotional expression clearly.
+    - [Lighting & Atmosphere]: Dark and moody, dramatic shadows, neon contrast, or fog.
+    - [Camera Movement]: Mention camera framing (e.g., "Slow dolly zoom", "Extreme close-up", "Low-angle cinematic shot").
+
+    Rules:
+    - The story must be in Bengali.
+    - Output MUST be valid JSON only following the exact structure below.
+
+    JSON Format:
+    {{
+        "title": "গল্পের একটি আকর্ষণীয় বাংলা টাইটেল (Movie Explainer Style)",
+        "genre": "{selected_genre}",
+        "scenes": [
+            {{
+                "scene_number": 1,
+                "narration": "গল্পের শুরুতে আমরা দেখতে পাই এক নির্জন পাহাড়, যেখানে একা দাঁড়িয়ে ছিল অয়ন।",
+                "image_prompt": "Cinematic movie still, wide landscape shot, a young man standing on a foggy lonely cliff, dramatic dark sunset, intense mood, dynamic framing, 8k resolution, hyper-realistic, highly detailed"
+            }}
+        ]
+    }}
+    """
+
+    models_to_try = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-pro']
+
+    for attempt in range(3): 
+        for model_name in models_to_try:
             try:
-                print(f"[script_generator] '{model_name}' দিয়ে স্ক্রিপ্ট জেনারেট করা হচ্ছে (চেষ্টা {attempt}/2)...")
-                response = client.models.generate_content(model=model_name, contents=prompt)
-                break
+                print(f"🔄 Generating with {model_name}...")
+                response = client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                        temperature=0.9
+                    )
+                )
+
+                story_text = response.text.strip()
+                if story_text.startswith("```json"):
+                    story_text = story_text.replace("```json", "").replace("```", "").strip()
+                elif story_text.startswith("```"):
+                    story_text = story_text.replace("```", "").strip()
+
+                story_data = json.loads(story_text)
+                
+                # চেক করুন এই গল্প আগে ব্যবহার হয়েছে কিনা
+                used_stories = load_used_stories()
+                if story_data["title"] in used_stories:
+                    print(f"⚠️ গল্পটি ('{story_data['title']}') আগে ব্যবহার হয়েছে। আবার চেষ্টা করছি...")
+                    continue
+
+                os.makedirs(OUTPUT_DIR, exist_ok=True)
+                with open(SCRIPT_DATA_PATH, "w", encoding="utf-8") as f:
+                    json.dump(story_data, f, ensure_ascii=False, indent=4)
+                
+                save_used_story(story_data["title"])
+                print(f"✅ Success! Script Generated | Genre: {selected_genre}")
+                return True
+
             except Exception as e:
-                last_error = e
-                print(f"[script_generator] '{model_name}' ব্যর্থ: {e}")
-                time.sleep(8)
-        if response is not None:
-            print(f"[script_generator] '{model_name}' সফল হয়েছে।")
-            break
+                print(f"⚠️ {model_name} failed: {e}")
+                time.sleep(5) 
 
-    if response is None:
-        raise RuntimeError(f"সবগুলো মডেল ব্যর্থ হয়েছে। শেষ এরর: {last_error}")
-
-    data = parse_response(response.text)
-
-    print(f"[script_generator] টাইটেল: {data['title']}")
-    print(f"[script_generator] মোট {len(data['scenes'])}টা scene পাওয়া গেছে।")
-
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
-    with open(SCRIPT_DATA_PATH, "w", encoding="utf-8") as f:
-        json.dump(data, f, ensure_ascii=False, indent=2)
-
-    # Remember this title so future runs don't repeat the same story.
-    used_titles.append(data["title"])
-    save_used_stories(used_titles)
-
-    return data
-
+    print("❌ Failed to generate script after all retries.")
+    return False
 
 if __name__ == "__main__":
-    generate()
+    generate_script()
