@@ -24,9 +24,17 @@ Final result is saved to output/script_data.json for the next stages.
 import os
 import re
 import json
+import time
 from google import genai
 
-MODEL_NAME = "gemini-3.5-flash"
+# Tries models newest-first; falls back to the next one if a model is busy
+# (503) or otherwise fails, so a single overloaded model doesn't kill the run.
+MODEL_CANDIDATES = [
+    "gemini-3.6-flash",       # newest, GA
+    "gemini-3.5-flash-lite",  # newest lite tier
+    "gemini-3.1-flash-lite",  # previous gen, stable
+    "gemini-2.5-flash",       # older but proven - final safety net
+]
 OUTPUT_DIR = "output"
 SCRIPT_DATA_PATH = os.path.join(OUTPUT_DIR, "script_data.json")
 USED_STORIES_PATH = os.path.join("data", "used_stories.json")
@@ -141,8 +149,25 @@ def generate():
     used_titles = load_used_stories()
     prompt = build_prompt(used_titles)
 
-    print("[script_generator] Gemini দিয়ে স্ক্রিপ্ট জেনারেট করা হচ্ছে...")
-    response = client.models.generate_content(model=MODEL_NAME, contents=prompt)
+    response = None
+    last_error = None
+    for model_name in MODEL_CANDIDATES:
+        for attempt in range(1, 3):
+            try:
+                print(f"[script_generator] '{model_name}' দিয়ে স্ক্রিপ্ট জেনারেট করা হচ্ছে (চেষ্টা {attempt}/2)...")
+                response = client.models.generate_content(model=model_name, contents=prompt)
+                break
+            except Exception as e:
+                last_error = e
+                print(f"[script_generator] '{model_name}' ব্যর্থ: {e}")
+                time.sleep(8)
+        if response is not None:
+            print(f"[script_generator] '{model_name}' সফল হয়েছে।")
+            break
+
+    if response is None:
+        raise RuntimeError(f"সবগুলো মডেল ব্যর্থ হয়েছে। শেষ এরর: {last_error}")
+
     data = parse_response(response.text)
 
     print(f"[script_generator] টাইটেল: {data['title']}")
