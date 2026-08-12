@@ -5,7 +5,7 @@ import time
 from google import genai
 from google.genai import types
 
-# 🌟 ডাইনামিক পাথ (নতুন প্রজেক্ট স্ট্রাকচার অনুযায়ী)
+# 🌟 ডাইনামিক পাথ
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -25,9 +25,8 @@ def save_used_story(title):
     with open(USED_STORIES_PATH, "w", encoding="utf-8") as f:
         json.dump(used, f, ensure_ascii=False, indent=4)
 
-# 👉 এখানে নাম ঠিক করে 'generate' করা হলো, যাতে main.py এরর না দেয়
 def generate():
-    print("🎬 Generating Cinematic Movie Explainer / Thriller Story...")
+    print("🎬 Generating Cinematic Movie Explainer / Thriller Story (With SEO Description)...")
     
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
@@ -36,7 +35,6 @@ def generate():
 
     client = genai.Client(api_key=api_key)
 
-    # 🌟 মুভি এক্সপ্লেইনার / থ্রিলার ক্যাটাগরি লিস্ট
     genres = [
         "সাইকোলজিক্যাল থ্রিলার ও রহস্যময় ঘটনা (Psychological Thriller)",
         "শার্লক হোমসের মত ডিটেকটিভ রহস্য (Detective Mystery)",
@@ -52,7 +50,7 @@ def generate():
     selected_genre = random.choice(genres)
     scene_count = random.randint(8, 15) 
 
-    # 🌟 মুভি এক্সপ্লেইনার টোনের অ্যাডভান্সড মাস্টার প্রম্পট
+    # 🌟 প্রম্পটে 'description' যুক্ত করা হয়েছে
     prompt = f"""
     You are a professional YouTube Movie Explainer & Cinematic Storyteller. Write an intense, suspenseful, and engaging story recap in Bengali.
 
@@ -61,7 +59,7 @@ def generate():
 
     🔥 CRITICAL RULE FOR SCENE 1 (THE MOVIE HOOK):
     - Scene 1 MUST start like a dramatic movie recap to hook the audience instantly.
-    - "narration" for Scene 1: Must create instant suspense in Bengali (e.g., 'গল্পের শুরুতে আমরা দেখতে পাই এক নিঝুম রাত...').
+    - "narration" for Scene 1: Must create instant suspense in Bengali.
 
     For EVERY scene's "image_prompt", combine these elements into a single English string:
     - [Style]: Photorealistic movie still, 8k resolution, unreal engine 5 render.
@@ -77,6 +75,7 @@ def generate():
     {{
         "title": "গল্পের একটি আকর্ষণীয় বাংলা টাইটেল (Movie Explainer Style)",
         "genre": "{selected_genre}",
+        "description": "ভিডিওর জন্য ৩-৪ লাইনের একটি সাসপেন্সফুল বাংলা ডেসক্রিপশন। সাথে ৩-৪ টি প্রাসঙ্গিক #হ্যাশট্যাগ দিন (যেমন: #BanglaThriller #MovieExplain)।",
         "scenes": [
             {{
                 "scene_number": 1,
@@ -110,7 +109,6 @@ def generate():
 
                 story_data = json.loads(story_text)
                 
-                # চেক করুন এই গল্প আগে ব্যবহার হয়েছে কিনা
                 used_stories = load_used_stories()
                 if story_data["title"] in used_stories:
                     print(f"⚠️ গল্পটি ('{story_data['title']}') আগে ব্যবহার হয়েছে। আবার চেষ্টা করছি...")
@@ -132,5 +130,4 @@ def generate():
     return False
 
 if __name__ == "__main__":
-    # 👉 এখানেও নাম আপডেট করা হয়েছে
     generate()
