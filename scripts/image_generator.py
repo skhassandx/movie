@@ -35,16 +35,14 @@ MODEL = "flux"
 MAX_RETRIES = 4
 
 
-def pollinations_generate_image(prompt, api_key=None):
+def pollinations_generate_image(prompt):
     encoded_prompt = quote(prompt[:2000])
     url = f"{BASE_URL}{encoded_prompt}"
-    # Deliberately NOT passing width/height/nologo - those pushed the request
-    # into Pollinations' paid/Pollen-metered path (402 Payment Required).
-    # Default-size Flux is the truly free+unlimited tier; we crop/resize to
-    # 1280x720 ourselves locally afterwards (see crop_to_landscape below).
+    # No `key` param on purpose: sending the sk_ key routes the request
+    # through Pollinations' billed/Pollen-metered path (402 Insufficient
+    # balance) even at default settings. Fully anonymous requests hit the
+    # genuinely free-unlimited Flux tier - just soft rate-limited to ~1/15s.
     params = {"model": MODEL}
-    if api_key:
-        params["key"] = api_key
 
     for attempt in range(1, MAX_RETRIES + 1):
         try:
@@ -97,14 +95,6 @@ def crop_to_landscape(image_bytes, target_size=TARGET_SIZE):
 
 
 def generate_all():
-    api_key = os.environ.get("POLLINATIONS_API_KEY")  # optional but recommended
-    if not api_key:
-        print(
-            "[image_generator] সতর্কতা: POLLINATIONS_API_KEY সেট নেই, anonymous রেট-লিমিটে "
-            "চলছে (~১৫s/ইমেজ)। দ্রুত করতে https://enter.pollinations.ai থেকে ফ্রি sk_ key "
-            "নিয়ে Secrets এ POLLINATIONS_API_KEY হিসেবে যোগ করো।"
-        )
-
     with open(SCRIPT_DATA_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
 
@@ -119,12 +109,11 @@ def generate_all():
 
         print(f"[image_generator] ছবি তৈরি হচ্ছে {i}/{total}...")
         prompt = scene["image_prompt"] + STYLE_SUFFIX
-        img_bytes = pollinations_generate_image(prompt, api_key)
+        img_bytes = pollinations_generate_image(prompt)
         img = crop_to_landscape(img_bytes)
         img.save(out_path, "JPEG", quality=90)
 
-        if not api_key:
-            time.sleep(15)  # respect anonymous-tier soft limit
+        time.sleep(15)  # respect the anonymous-tier soft rate limit
 
     print(f"[image_generator] সম্পন্ন - {total}টা ছবি তৈরি হয়েছে।")
 
