@@ -5,7 +5,6 @@ import time
 from google import genai
 from google.genai import types
 
-# 🌟 ডাইনামিক পাথ
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 DATA_DIR = os.path.join(BASE_DIR, "data")
@@ -14,8 +13,16 @@ USED_STORIES_PATH = os.path.join(DATA_DIR, "used_stories.json")
 
 def load_used_stories():
     if os.path.exists(USED_STORIES_PATH):
-        with open(USED_STORIES_PATH, "r", encoding="utf-8") as f:
-            return json.load(f)
+        try:
+            with open(USED_STORIES_PATH, "r", encoding="utf-8") as f:
+                data = json.load(f)
+                # 🌟 যদি ভুল করে ডিকশনারি থাকে, তবে সেটাকে ইগনোর করে ফ্রেশ লিস্ট রিটার্ন করবে
+                if isinstance(data, list):
+                    return data
+                else:
+                    return []
+        except:
+            return []
     return []
 
 def save_used_story(title):
@@ -50,7 +57,6 @@ def generate():
     selected_genre = random.choice(genres)
     scene_count = random.randint(8, 15) 
 
-    # 🌟 প্রম্পটে 'description' যুক্ত করা হয়েছে
     prompt = f"""
     You are a professional YouTube Movie Explainer & Cinematic Storyteller. Write an intense, suspenseful, and engaging story recap in Bengali.
 
@@ -86,7 +92,8 @@ def generate():
     }}
     """
 
-    models_to_try = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-pro']
+    # 🌟 মডেল লিস্ট থেকে ডেড মডেলটি বাদ দেওয়া হয়েছে
+    models_to_try = ['gemini-3.6-flash', 'gemini-3.5-flash']
 
     for attempt in range(3): 
         for model_name in models_to_try:
