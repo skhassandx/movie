@@ -1,7 +1,7 @@
 """
 image_generator.py
 -------------------
-Calls Pollinations.ai (https://gen.pollinations.ai) to turn each scene's
+Calls Pollinations.ai (https://image.pollinations.ai) to turn each scene's
 image_prompt into a picture, then crops/resizes it to a 1280x720 landscape
 frame for the video.
 """
@@ -14,19 +14,22 @@ import json
 from urllib.parse import quote
 from PIL import Image
 
-# 🌟 ডাইনামিক পাথ (নতুন প্রজেক্ট স্ট্রাকচার অনুযায়ী)
+# 🌟 ডাইনামিক পাথ (নতুন প্রজেক্ট স্ট্রাকচার অনুযায়ী)
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 OUTPUT_DIR = os.path.join(BASE_DIR, "output")
 SCRIPT_DATA_PATH = os.path.join(OUTPUT_DIR, "script_data.json")
 IMAGES_DIR = os.path.join(OUTPUT_DIR, "images")
 
 # 🌟 ভিডিওর রেজোলিউশন (লং ভিডিওর জন্য 1280x720, শর্টসের জন্য 720x1280 করে নেবেন)
-TARGET_SIZE = (1280, 720) 
+TARGET_SIZE = (1280, 720)
 
-STYLE_SUFFIX = (
-    ", cinematic lighting, moody atmosphere, highly detailed digital painting, "
-    "dramatic composition, dark suspense mystery tone, no text, no watermark"
-)
+# ফিক্স: আগে এখানে অনেকগুলো স্টাইল-অ্যাডজেক্টিভ (cinematic lighting, moody
+# atmosphere, highly detailed digital painting...) জোড়া হতো, যেটা
+# script_generator.py এর নিজের ডিটেইলড image_prompt (8k, unreal engine 5,
+# camera framing ইত্যাদি) এর সাথে ওভারল্যাপ করে প্রম্পটকে ঘেঁটে দিচ্ছিল -
+# এটাই সম্ভবত ছবির মান কমার একটা বড় কারণ ছিল। এখন শুধু "no text/watermark"
+# রাখা হলো, যেটা সত্যিই দরকারি এবং নতুন কিছু যোগ করে না।
+STYLE_SUFFIX = ", no text, no watermark"
 
 BASE_URL = "https://image.pollinations.ai/prompt/"
 MODEL = "flux"
@@ -40,6 +43,7 @@ def pollinations_generate_image(prompt):
         "width": TARGET_SIZE[0],
         "height": TARGET_SIZE[1],
         "nologo": "true",
+        "enhance": "true",  # Pollinations-এর নিজস্ব prompt-enhancement, একটু বাড়তি ডিটেইল যোগ করে
     }
 
     for attempt in range(1, MAX_RETRIES + 1):
@@ -91,8 +95,11 @@ def crop_to_landscape(image_bytes, target_size=TARGET_SIZE):
 
 def generate_all():
     if not os.path.exists(SCRIPT_DATA_PATH):
-        print(f"❌ Error: {SCRIPT_DATA_PATH} পাওয়া যায়নি! আগে script_generator.py রান করুন।")
-        return
+        # ফিক্স: আগে এখানে print করে চুপচাপ return করত, main.py সেটা ধরতে পারত না
+        # এবং পাইপলাইন কোনো ছবি ছাড়াই "সফলভাবে" পরের ধাপে চলে যেত।
+        raise FileNotFoundError(
+            f"❌ {SCRIPT_DATA_PATH} পাওয়া যায়নি! আগে script_generator.py রান করুন।"
+        )
 
     with open(SCRIPT_DATA_PATH, "r", encoding="utf-8") as f:
         data = json.load(f)
@@ -104,7 +111,7 @@ def generate_all():
     for i, scene in enumerate(scenes, start=1):
         out_path = os.path.join(IMAGES_DIR, f"scene_{i:03d}.jpg")
         if os.path.exists(out_path):
-            continue 
+            continue
 
         print(f"[image_generator] ছবি তৈরি হচ্ছে {i}/{total}...")
         prompt = scene["image_prompt"] + STYLE_SUFFIX
@@ -112,7 +119,7 @@ def generate_all():
         img = crop_to_landscape(img_bytes)
         img.save(out_path, "JPEG", quality=90)
 
-        time.sleep(15) 
+        time.sleep(15)
 
     print(f"[image_generator] সম্পন্ন - {total}টা ছবি তৈরি হয়েছে।")
 

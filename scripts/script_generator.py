@@ -34,28 +34,29 @@ def save_used_story(title):
 
 def generate():
     print("🎬 Generating Cinematic Movie Explainer / Thriller Story (With SEO Description)...")
-    
+
     api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        print("❌ CRITICAL ERROR: GEMINI_API_KEY not found!")
-        return False
+        # ফিক্স: চুপচাপ False রিটার্ন করলে main.py এটা ধরতে পারে না (শুধু exception ধরে)।
+        # তাই এখন raise করা হচ্ছে, যাতে পাইপলাইন সঠিকভাবে ব্যর্থ হিসেবে থামে।
+        raise EnvironmentError("❌ CRITICAL ERROR: GEMINI_API_KEY not found!")
 
     client = genai.Client(api_key=api_key)
 
     genres = [
-        "সাইকোলজিক্যাল থ্রিলার ও রহস্যময় ঘটনা (Psychological Thriller)",
+        "সাইকোলজিক্যাল থ্রিলার ও রহস্যময় ঘটনা (Psychological Thriller)",
         "শার্লক হোমসের মত ডিটেকটিভ রহস্য (Detective Mystery)",
         "স্পেস স্টেশন ও মহাকাশের সার্ভাইভাল থ্রিলার (Space Survival)",
         "ডার্ক ফ্যান্টাসি ও জাদুকরী সাম্রাজ্য (Dark Fantasy)",
-        "টাইম লুপ ও রহস্যময় সময় ভ্রমণ (Time Loop Mystery)",
+        "টাইম লুপ ও রহস্যময় সময় ভ্রমণ (Time Loop Mystery)",
         "নিঝুম দ্বীপের সারভাইভাল অ্যাডভেঞ্চার (Island Survival)",
-        "প্যারানরমাল ও ভুতুড়ে রহস্যজনক ঘটনা (Paranormal Mystery)",
-        "গভীর সমুদ্রের রহস্য ও হারিয়ে যাওয়া জাহাজ (Deep Sea Mystery)",
+        "প্যারানরমাল ও ভুতুড়ে রহস্যজনক ঘটনা (Paranormal Mystery)",
+        "গভীর সমুদ্রের রহস্য ও হারিয়ে যাওয়া জাহাজ (Deep Sea Mystery)",
         "প্রাচীন পিরামিড ও অভিশপ্ত ধনসম্পদ (Ancient Curse)"
     ]
-    
+
     selected_genre = random.choice(genres)
-    scene_count = random.randint(8, 15) 
+    scene_count = random.randint(8, 15)
 
     prompt = f"""
     You are a professional YouTube Movie Explainer & Cinematic Storyteller. Write an intense, suspenseful, and engaging story recap in Bengali.
@@ -79,23 +80,24 @@ def generate():
 
     JSON Format:
     {{
-        "title": "গল্পের একটি আকর্ষণীয় বাংলা টাইটেল (Movie Explainer Style)",
+        "title": "গল্পের একটি আকর্ষণীয় বাংলা টাইটেল (Movie Explainer Style)",
         "genre": "{selected_genre}",
         "description": "ভিডিওর জন্য ৩-৪ লাইনের একটি সাসপেন্সফুল বাংলা ডেসক্রিপশন। সাথে ৩-৪ টি প্রাসঙ্গিক #হ্যাশট্যাগ দিন (যেমন: #BanglaThriller #MovieExplain)।",
         "scenes": [
             {{
                 "scene_number": 1,
-                "narration": "গল্পের শুরুতে আমরা দেখতে পাই এক নির্জন পাহাড়, যেখানে একা দাঁড়িয়ে ছিল অয়ন।",
+                "narration": "গল্পের শুরুতে আমরা দেখতে পাই এক নির্জন পাহাড়, যেখানে একা দাঁড়িয়ে ছিল অয়ন।",
                 "image_prompt": "Cinematic movie still, wide landscape shot, a young man standing on a foggy lonely cliff, dramatic dark sunset, intense mood, dynamic framing, 8k resolution, hyper-realistic, highly detailed"
             }}
         ]
     }}
     """
 
-    # 🌟 মডেল লিস্ট থেকে ডেড মডেলটি বাদ দেওয়া হয়েছে
+    # 🌟 মডেল লিস্ট থেকে ডেড মডেলটি বাদ দেওয়া হয়েছে
     models_to_try = ['gemini-3.6-flash', 'gemini-3.5-flash']
 
-    for attempt in range(3): 
+    last_error = None
+    for attempt in range(3):
         for model_name in models_to_try:
             try:
                 print(f"🔄 Generating with {model_name}...")
@@ -115,26 +117,27 @@ def generate():
                     story_text = story_text.replace("```", "").strip()
 
                 story_data = json.loads(story_text)
-                
+
                 used_stories = load_used_stories()
                 if story_data["title"] in used_stories:
-                    print(f"⚠️ গল্পটি ('{story_data['title']}') আগে ব্যবহার হয়েছে। আবার চেষ্টা করছি...")
+                    print(f"⚠️ গল্পটি ('{story_data['title']}') আগে ব্যবহার হয়েছে। আবার চেষ্টা করছি...")
                     continue
 
                 os.makedirs(OUTPUT_DIR, exist_ok=True)
                 with open(SCRIPT_DATA_PATH, "w", encoding="utf-8") as f:
                     json.dump(story_data, f, ensure_ascii=False, indent=4)
-                
+
                 save_used_story(story_data["title"])
                 print(f"✅ Success! Script Generated | Genre: {selected_genre}")
                 return True
 
             except Exception as e:
+                last_error = e
                 print(f"⚠️ {model_name} failed: {e}")
-                time.sleep(5) 
+                time.sleep(5)
 
-    print("❌ Failed to generate script after all retries.")
-    return False
+    # ফিক্স: এখানেও আগে শুধু print করে False রিটার্ন করত, main.py সেটা ধরতে পারত না।
+    raise RuntimeError(f"❌ Failed to generate script after all retries. শেষ এরর: {last_error}")
 
 if __name__ == "__main__":
     generate()
