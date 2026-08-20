@@ -56,17 +56,37 @@ def generate():
     ]
 
     selected_genre = random.choice(genres)
-    scene_count = random.randint(8, 15)
+    # ফিক্স: ৮-১০ মিনিটের টার্গেটে scene সংখ্যা রিক্যালকুলেট করা হলো।
+    # ~১৫৫ শব্দ/মিনিট বাংলা TTS গতি × ৮-১০ মিনিট = ~১২৪০-১৫৫০ শব্দ,
+    # প্রতি scene ~২৫ শব্দ ধরে ৪৮-৬২টা scene দরকার।
+    scene_count = random.randint(48, 62)
 
     prompt = f"""
     You are a professional YouTube Movie Explainer & Cinematic Storyteller. Write an intense, suspenseful, and engaging story recap in Bengali.
 
     Target Genre/Topic: {selected_genre}
     The script must be divided into exactly {scene_count} scenes.
+    Each scene's "narration" should be a short beat of about 20-30 Bengali words
+    (roughly 8-10 seconds of speech) - keep the pacing tight and cinematic, not
+    long paragraphs per scene.
 
     🔥 CRITICAL RULE FOR SCENE 1 (THE MOVIE HOOK):
     - Scene 1 MUST start like a dramatic movie recap to hook the audience instantly.
     - "narration" for Scene 1: Must create instant suspense in Bengali.
+
+    🎯 RETENTION RULES (VERY IMPORTANT - the goal is that no viewer can skip):
+    - The plot MUST be genuinely original - do NOT reuse common/cliché twists
+      (e.g. "it was all a dream", "the villain was the narrator's twin",
+      "he was dead the whole time"). Invent a fresh angle within the genre.
+    - Every single scene's "narration" must end on an open question, a new
+      piece of information, or a small cliffhanger - never a fully-resolved
+      thought - so the viewer always wants the next sentence.
+    - Place a bigger "pattern interrupt" (a shocking reveal, a rule-break, a
+      reversal) at roughly the 25%, 50%, and 75% marks of the scene list, not
+      only at the start and the end - this is what keeps mid-video retention
+      high instead of viewers dropping off after the hook fades.
+    - The final scene must land an ending that recontextualizes something
+      shown earlier (so attentive viewers feel rewarded, not just told "the end").
 
     For EVERY scene's "image_prompt", combine these elements into a single English string:
     - [Style]: Photorealistic movie still, 8k resolution, unreal engine 5 render.
@@ -93,8 +113,8 @@ def generate():
     }}
     """
 
-    # 🌟 মডেল লিস্ট থেকে ডেড মডেলটি বাদ দেওয়া হয়েছে
-    models_to_try = ['gemini-3.6-flash', 'gemini-3.5-flash']
+    # 🌟 ৩টা মডেল - একটা ব্যস্ত থাকলে পরেরটায় চলে যাবে
+    models_to_try = ['gemini-3.6-flash', 'gemini-3.5-flash', 'gemini-2.5-flash']
 
     last_error = None
     for attempt in range(3):

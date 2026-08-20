@@ -9,6 +9,7 @@ Combines per-scene images + per-scene audio into the final 1280x720 mp4:
 
 import os
 import json
+import random
 from moviepy.editor import (
     ImageClip,
     AudioFileClip,
@@ -26,12 +27,26 @@ FRAME_SIZE = (1280, 720)
 FPS = 24
 
 
-def ken_burns(clip, zoom_ratio=0.06):
-    """Slow, subtle zoom-in over the clip's duration."""
-    def resize_fn(t):
-        return 1 + zoom_ratio * (t / max(clip.duration, 0.01))
+def ken_burns(clip, mode):
+    """
+    Varied zoom (no true character animation - see chat for why that isn't
+    realistically free/automatable). Randomly picking zoom-in vs zoom-out
+    and slightly different speeds per scene at least avoids every single
+    scene feeling like the exact same motion.
+    """
+    duration = max(clip.duration, 0.01)
 
-    return clip.resize(resize_fn).set_position(("center", "center"))
+    if mode == "zoom_in_slow":
+        return clip.resize(lambda t: 1.0 + 0.05 * (t / duration))
+    elif mode == "zoom_in_fast":
+        return clip.resize(lambda t: 1.0 + 0.09 * (t / duration))
+    elif mode == "zoom_out":
+        return clip.resize(lambda t: 1.09 - 0.07 * (t / duration))
+    else:  # "zoom_in_slow" fallback
+        return clip.resize(lambda t: 1.0 + 0.06 * (t / duration))
+
+
+MOTION_MODES = ["zoom_in_slow", "zoom_in_fast", "zoom_out"]
 
 
 def build_video():
@@ -55,10 +70,11 @@ def build_video():
         duration = audio_clip.duration + 0.3  # tiny buffer so audio never gets cut
 
         base = ImageClip(img_path).set_duration(duration)
-        base = ken_burns(base).resize(height=FRAME_SIZE[1] + 40)  # slight overscan for zoom room
+        base = base.resize(height=FRAME_SIZE[1] + 60)  # overscan for zoom room
+        base = ken_burns(base, random.choice(MOTION_MODES))
         base = base.set_position(("center", "center"))
 
-        # 🌟 সাবটাইটেল ছাড়া শুধুমাত্র ছবি এবং অডিও কম্পোজ করা হচ্ছে
+        # 🌟 সাবটাইটেল ছাড়া শুধুমাত্র ছবি এবং অডিও কম্পোজ করা হচ্ছে
         scene_clip = CompositeVideoClip([base], size=FRAME_SIZE)
         scene_clip = scene_clip.set_audio(audio_clip)
         clips.append(scene_clip)
@@ -66,7 +82,7 @@ def build_video():
     if not clips:
         raise RuntimeError("কোনো scene clip তৈরি হয়নি - image/audio জেনারেশন ধাপ চেক করো।")
 
-    print("[video_editor] সব scene জোড়া দিয়ে ফাইনাল ভিডিও রেন্ডার হচ্ছে (সাবটাইটেল ছাড়া দ্রুত রেন্ডার হবে)...")
+    print("[video_editor] সব scene জোড়া দিয়ে ফাইনাল ভিডিও রেন্ডার হচ্ছে (সাবটাইটেল ছাড়া দ্রুত রেন্ডার হবে)...")
     final = concatenate_videoclips(clips, method="compose")
     final.write_videofile(
         FINAL_VIDEO_PATH,
@@ -74,7 +90,9 @@ def build_video():
         codec="libx264",
         audio_codec="aac",
         threads=4,
-        preset="faster",  
+        preset="faster",
+        bitrate="3000k",  # ফিক্স: আগে বিটরেট বলা ছিল না, ffmpeg ডিফল্টে অনেক কম
+                           # (~৬০kbps) বেছে নিচ্ছিল - এটাই ঝাপসা/ব্লকি ভিডিওর কারণ ছিল।
     )
     print(f"[video_editor] সম্পন্ন - {FINAL_VIDEO_PATH}")
     return FINAL_VIDEO_PATH
