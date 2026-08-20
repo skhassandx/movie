@@ -16,6 +16,7 @@ from moviepy.editor import (
     CompositeVideoClip,
     concatenate_videoclips,
 )
+from scripts.branding import make_intro_clip, make_outro_clip
 
 OUTPUT_DIR = "output"
 SCRIPT_DATA_PATH = os.path.join(OUTPUT_DIR, "script_data.json")
@@ -55,7 +56,7 @@ def build_video():
 
     scenes = data["scenes"]
     total = len(scenes)
-    clips = []
+    clips = [make_intro_clip()]  # 🌟 প্রতি ভিডিওতে অটোমেটিক ইন্ট্রো
 
     for i, scene in enumerate(scenes, start=1):
         img_path = os.path.join(IMAGES_DIR, f"scene_{i:03d}.jpg")
@@ -79,8 +80,10 @@ def build_video():
         scene_clip = scene_clip.set_audio(audio_clip)
         clips.append(scene_clip)
 
-    if not clips:
+    if len(clips) <= 1:  # শুধু ইন্ট্রো আছে, কোনো scene clip যোগ হয়নি
         raise RuntimeError("কোনো scene clip তৈরি হয়নি - image/audio জেনারেশন ধাপ চেক করো।")
+
+    clips.append(make_outro_clip())  # 🌟 প্রতি ভিডিওতে অটোমেটিক আউট্রো
 
     print("[video_editor] সব scene জোড়া দিয়ে ফাইনাল ভিডিও রেন্ডার হচ্ছে (সাবটাইটেল ছাড়া দ্রুত রেন্ডার হবে)...")
     final = concatenate_videoclips(clips, method="compose")
