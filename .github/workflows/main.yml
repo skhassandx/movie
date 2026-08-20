@@ -2,8 +2,8 @@ name: MysteryTales Bangla Automation
 
 on:
   schedule:
-    # Every Monday and Thursday at 15:00 UTC (~21:00 Bangladesh time). Adjust as you like.
-    - cron: "0 15 * * 1,4"
+    # প্রতিদিন 14:00 UTC = রাত ৮টা বাংলাদেশ সময় (UTC+6)
+    - cron: "0 14 * * *"
   workflow_dispatch: {}
 
 permissions:
