@@ -2,8 +2,8 @@ name: MysteryTales Bangla Automation
 
 on:
   schedule:
-    # প্রতিদিন 14:00 UTC = রাত ৮টা বাংলাদেশ সময় (UTC+6)
-    - cron: "0 14 * * *"
+    # প্রতিদিন 12:00 UTC = রাত ৬টা বাংলাদেশ সময় (UTC+6)
+    - cron: "0 12 * * *"
   workflow_dispatch: {}
 
 permissions:
