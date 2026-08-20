@@ -24,6 +24,35 @@ DISCLOSURE = (
     "সাহিত্য/লোককথা অবলম্বনে। বিনোদনের উদ্দেশ্যে তৈরি।"
 )
 
+# SEO: প্রথম লাইনেই মূল কীওয়ার্ড থাকলে সার্চ/সাজেশনে দেখানোর সম্ভাবনা বাড়ে
+SEO_INTRO = "বাংলা রহস্য গল্প | সাসপেন্স থ্রিলার | Bangla Mystery Story\n\n"
+
+BASE_TAGS = [
+    "Bangla Thriller", "Bangla Mystery Story", "Suspense Story Bangla",
+    "Bangla Horror Story", "AI Story Bangla", "Bangla Movie Explainer",
+]
+
+
+def build_tags(data):
+    """genre থেকে + কিছু ফিক্সড ট্যাগ মিশিয়ে SEO ট্যাগ বানায়, যেহেতু
+    script_generator এর JSON schema-তে আলাদা tags ফিল্ড নেই।"""
+    import re
+    tags = list(data.get("tags", []))
+    genre = data.get("genre", "")
+    if genre:
+        m = re.search(r"\(([^)]+)\)", genre)
+        if m:
+            tags.append(m.group(1).strip())
+        tags.append(re.sub(r"\([^)]*\)", "", genre).strip())
+    tags.extend(BASE_TAGS)
+
+    seen, unique_tags = set(), []
+    for t in tags:
+        if t and t not in seen:
+            seen.add(t)
+            unique_tags.append(t)
+    return unique_tags[:15]
+
 
 def get_credentials():
     return Credentials(
@@ -49,13 +78,17 @@ def upload():
     body = {
         "snippet": {
             "title": data["title"][:100],
-            "description": (data["description"] + DISCLOSURE)[:5000],
-            "tags": data.get("tags", []),
+            "description": (SEO_INTRO + data["description"] + DISCLOSURE)[:5000],
+            "tags": build_tags(data),
             "categoryId": CATEGORY_ID,
         },
         "status": {
             "privacyStatus": "public",
             "selfDeclaredMadeForKids": False,
+            # YouTube-এর A/S (Altered/Synthetic) content ডিসক্লোজার - 2024 থেকে API
+            # সাপোর্ট করে। মূলত বাস্তব মানুষ/ঘটনার realistic ডিপিকশনের জন্য বাধ্যতামূলক;
+            # আমাদের কনটেন্ট কাল্পনিক/স্টাইলাইজড হলেও স্বচ্ছতার স্বার্থে true রাখা ভালো।
+            "containsSyntheticMedia": True,
         },
     }
 
